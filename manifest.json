@@ -1,6 +1,6 @@
 {
-  "name": "CentoPassi Tracker",
-  "short_name": "CentoPassi",
+  "name": "GPS Tracker",
+  "short_name": "GPS Tracker",
   "start_url": "./Index.html",
   "display": "standalone",
   "background_color": "#f8f9fa",

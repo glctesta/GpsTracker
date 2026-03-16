@@ -1,4 +1,4 @@
-const cacheName = 'centopassi-v1';
+const cacheName = 'gpstracker-v1';
 const staticAssets = [
   './Index.html',
   './style.css',
