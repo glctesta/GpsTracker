@@ -3,6 +3,8 @@
  * Refactored for better modularity and performance.
  */
 
+const SESSION_STORAGE_PREFIX = 'racetracker:session:';
+
 class RaceTracker {
     constructor() {
         // State
@@ -16,6 +18,7 @@ class RaceTracker {
         this.circles = [];
         this.watchId = null;
         this.deferredPrompt = null;
+        this.currentSessionKey = null;
 
         // DOM Elements
         this.ui = {
@@ -215,14 +218,89 @@ class RaceTracker {
         reader.readAsArrayBuffer(file);
     }
 
-    loadWaypoints(waypoints) {
+    async loadWaypoints(waypoints) {
         this.allWaypoints = waypoints;
         this.resetState();
-        this.stats.total = this.allWaypoints.length;
-        this.stats.remaining = this.allWaypoints.length;
+        this.stats.total = waypoints.length;
+        this.stats.remaining = waypoints.length;
+
+        try {
+            const hash = await this.fingerprintWaypoints(waypoints);
+            this.currentSessionKey = SESSION_STORAGE_PREFIX + hash;
+        } catch (e) {
+            console.warn("Could not fingerprint waypoints, session persistence disabled:", e);
+            this.currentSessionKey = null;
+        }
+
+        const saved = this.loadSavedSession();
+        if (saved && (saved.stats.reached > 0 || saved.stats.skipped > 0)) {
+            const when = new Date(saved.savedAt).toLocaleString();
+            const cont = confirm(
+                `Previous session found (saved ${when}):\n` +
+                `  Reached: ${saved.stats.reached} / ${saved.stats.total}\n` +
+                `  Skipped: ${saved.stats.skipped}\n\n` +
+                `Continue the previous session?`
+            );
+            if (cont) {
+                this.restoreSession(saved);
+                return;
+            }
+        }
+
         this.updateStatsUI();
         this.drawAllWaypoints();
         this.setCurrentWaypoint(0);
+        this.saveSession();
+    }
+
+    async fingerprintWaypoints(waypoints) {
+        const text = waypoints.map(w => `${w.lat.toFixed(7)},${w.lon.toFixed(7)}`).join('|');
+        const buf = new TextEncoder().encode(text);
+        const hashBuf = await crypto.subtle.digest('SHA-256', buf);
+        return Array.from(new Uint8Array(hashBuf))
+            .map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    loadSavedSession() {
+        if (!this.currentSessionKey) return null;
+        try {
+            const raw = localStorage.getItem(this.currentSessionKey);
+            if (!raw) return null;
+            const data = JSON.parse(raw);
+            if (data.totalWaypoints !== this.allWaypoints.length) return null;
+            return data;
+        } catch (e) {
+            console.warn("Failed to load saved session:", e);
+            return null;
+        }
+    }
+
+    saveSession() {
+        if (!this.currentSessionKey) return;
+        try {
+            const data = {
+                stats: this.stats,
+                reachedLog: this.reachedWaypointsLog,
+                currentWaypointIndex: this.currentWaypointIndex,
+                totalWaypoints: this.allWaypoints.length,
+                savedAt: new Date().toISOString()
+            };
+            localStorage.setItem(this.currentSessionKey, JSON.stringify(data));
+        } catch (e) {
+            console.warn("Failed to save session:", e);
+        }
+    }
+
+    restoreSession(saved) {
+        this.stats = saved.stats;
+        this.reachedWaypointsLog = saved.reachedLog || [];
+        this.updateStatsUI();
+        this.drawAllWaypoints();
+        if (saved.currentWaypointIndex >= 0 && saved.currentWaypointIndex < this.allWaypoints.length) {
+            this.setCurrentWaypoint(saved.currentWaypointIndex);
+        } else {
+            this.currentWaypointIndex = -1;
+        }
     }
 
     handleGpxError(gpx) {
@@ -342,6 +420,7 @@ class RaceTracker {
         if (navigator.vibrate) navigator.vibrate(200);
 
         this.setCurrentWaypoint(this.currentWaypointIndex + 1);
+        this.saveSession();
     }
 
     skipCurrentWaypoint() {
@@ -353,6 +432,7 @@ class RaceTracker {
         this.stats.remaining--;
         this.updateStatsUI();
         this.setCurrentWaypoint(this.currentWaypointIndex + 1);
+        this.saveSession();
     }
 
     updateStatsUI() {
