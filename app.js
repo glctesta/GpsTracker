@@ -116,6 +116,15 @@ class RaceTracker {
         const file = event.target.files[0];
         if (!file) return;
 
+        const name = file.name.toLowerCase();
+        if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+            this.handleExcelFile(file);
+        } else {
+            this.handleGpxFile(file);
+        }
+    }
+
+    handleGpxFile(file) {
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
@@ -124,20 +133,14 @@ class RaceTracker {
                 gpx.parse(gpxData);
 
                 if (gpx.waypoints && gpx.waypoints.length > 0) {
-                    this.allWaypoints = gpx.waypoints.map(wp => ({
+                    const waypoints = gpx.waypoints.map(wp => ({
                         lat: wp.lat,
                         lon: wp.lon,
                         name: wp.name || 'Waypoint',
                         time: wp.time,
                         ele: wp.ele
                     }));
-
-                    this.resetState();
-                    this.stats.total = this.allWaypoints.length;
-                    this.stats.remaining = this.allWaypoints.length;
-                    this.updateStatsUI();
-                    this.drawAllWaypoints();
-                    this.setCurrentWaypoint(0);
+                    this.loadWaypoints(waypoints);
                 } else {
                     this.handleGpxError(gpx);
                 }
@@ -147,6 +150,79 @@ class RaceTracker {
             }
         };
         reader.readAsText(file);
+    }
+
+    handleExcelFile(file) {
+        if (typeof XLSX === 'undefined') {
+            alert("Excel library not loaded. Check your internet connection and reload the page.");
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
+
+                const waypoints = [];
+                const errors = [];
+                rows.forEach((row, i) => {
+                    const cell = row[0];
+                    if (cell === undefined || cell === null || String(cell).trim() === '') return;
+                    const parts = String(cell).trim().split(/\s+/);
+                    if (parts.length < 2) {
+                        errors.push(`Row ${i + 1}: expected two values separated by space, got "${cell}"`);
+                        return;
+                    }
+                    const lat = parseFloat(parts[0].replace(',', '.'));
+                    const lon = parseFloat(parts[1].replace(',', '.'));
+                    if (isNaN(lat) || isNaN(lon)) {
+                        errors.push(`Row ${i + 1}: invalid numbers "${cell}"`);
+                        return;
+                    }
+                    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+                        errors.push(`Row ${i + 1}: coordinates out of range "${cell}"`);
+                        return;
+                    }
+                    const rawName = row[1];
+                    const cleanName = (rawName === undefined || rawName === null)
+                        ? ''
+                        : String(rawName).trim();
+                    const baseName = cleanName || `WP`;
+                    waypoints.push({
+                        lat,
+                        lon,
+                        name: `${waypoints.length + 1} - ${baseName}`,
+                        time: null,
+                        ele: null
+                    });
+                });
+
+                if (errors.length) console.warn("Excel parse warnings:", errors);
+
+                if (waypoints.length === 0) {
+                    const preview = errors.slice(0, 5).join("\n");
+                    alert("No valid coordinates found in column A." + (preview ? "\n\n" + preview : ""));
+                    return;
+                }
+                this.loadWaypoints(waypoints);
+            } catch (error) {
+                console.error("Excel Parse Error:", error);
+                alert("Error parsing Excel file. See console for details.");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    loadWaypoints(waypoints) {
+        this.allWaypoints = waypoints;
+        this.resetState();
+        this.stats.total = this.allWaypoints.length;
+        this.stats.remaining = this.allWaypoints.length;
+        this.updateStatsUI();
+        this.drawAllWaypoints();
+        this.setCurrentWaypoint(0);
     }
 
     handleGpxError(gpx) {

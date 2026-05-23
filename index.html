@@ -27,8 +27,8 @@
 
         <section id="menu">
             <h3>Menu</h3>
-            <label for="gpx-file">Load GPX:</label>
-            <input type="file" id="gpx-file" accept=".gpx">
+            <label for="gpx-file">Load GPX/XLSX:</label>
+            <input type="file" id="gpx-file" accept=".gpx,.xlsx,.xls">
         </section>
 
         <section id="config">
@@ -65,6 +65,7 @@
 
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script src="https://unpkg.com/gpxparser"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="app.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
