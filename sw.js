@@ -1,6 +1,6 @@
-const cacheName = 'gpstracker-v1';
+const cacheName = 'gpstracker-v2';
 const staticAssets = [
-  './Index.html',
+  './index.html',
   './style.css',
   './app.js',
   './manifest.json'
@@ -13,7 +13,11 @@ self.addEventListener('install', async e => {
 });
 
 self.addEventListener('activate', e => {
-  self.clients.claim();
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== cacheName).map(k => caches.delete(k)))
+    ).then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener('fetch', async e => {
